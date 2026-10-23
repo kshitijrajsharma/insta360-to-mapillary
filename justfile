@@ -1,4 +1,5 @@
 set shell := ["bash", "-uc"]
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
 # Default: list available recipes
 default:
@@ -19,7 +20,7 @@ test *ARGS:
 
 # Upload every MP4 + GPX pair in a folder to Mapillary
 run *ARGS:
-    uv run insta360-mapillary {{ARGS}}
+    uv run insta360-to-mapillary {{ARGS}}
 
 # Build the wheel and source distribution into dist/
 build:

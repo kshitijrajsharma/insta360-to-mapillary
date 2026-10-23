@@ -6,24 +6,23 @@ For every `NAME.mp4` in a folder with a matching `NAME.gpx`, the tool extracts a
 
 Images outside the track or too close to the previous image are skipped. Any other error stops the run before that video is uploaded. Videos earlier in the folder are already uploaded by then.
 
-## Requirements
-
-- Python 3.11 or newer
-- `ffmpeg`, `ffprobe` and `exiftool`. H.265 exports need an HEVC decoder, which Fedora's default `ffmpeg-free` leaves out (checked on Fedora 43). Use the full `ffmpeg` from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
+See the [guide](guide.md) for the full steps from recording to upload.
 
 ## Installation
 
+The tool runs on Linux, macOS 14 or newer, and 64-bit Windows. It needs [uv](https://docs.astral.sh/uv/getting-started/installation/), which also [installs Python](https://docs.astral.sh/uv/guides/install-python/) when needed. ffmpeg comes bundled through [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg).
+
 ```bash
-uv tool install insta360-mapillary --with-executables-from mapillary-tools
+uv tool install insta360-to-mapillary --with-executables-from mapillary-tools
 mapillary_tools authenticate --user_name YOUR_MAPILLARY_USERNAME
 ```
 
 ## Usage
 
-Record with GPS turned on in the Insta360 app, then export each clip from Insta360 Studio as MP4 with **Export GPX file** ticked.
+Record with GPS turned on in the Insta360 app, then export each clip from Insta360 Studio as MP4 with **Export GPX File** ticked.
 
 ```bash
-insta360-mapillary ~/mapillary/ride1
+insta360-to-mapillary ~/mapillary/ride1
 ```
 
 | Option | Default | Description |
@@ -33,7 +32,7 @@ insta360-mapillary ~/mapillary/ride1
 | `--skip-start` | `0` | Seconds left out at the start of each video |
 | `--skip-end` | `0` | Seconds left out at the end of each video |
 | `--min-spacing` | | Keep an image only when it is more than this many metres from the previous kept image, in any direction |
-| `--camera-make` | `Insta360` for Studio exports | Camera make recorded on Mapillary |
+| `--camera-make` | `Insta360` | Camera make recorded on Mapillary |
 | `--camera-model` | | Camera model recorded on Mapillary, such as `X6` |
 | `--dry-run`, `--no-dry-run` | off | Process everything and write the upload to a local folder |
 
@@ -60,3 +59,7 @@ just setup
 just lint
 just test
 ```
+
+## License
+
+[GPL-3.0-or-later](LICENSE)

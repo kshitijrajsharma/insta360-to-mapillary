@@ -24,6 +24,6 @@ def find_recordings(folder: Path) -> list[Recording]:
     if videos_without_track:
         raise MissingTrackError(
             f"No matching .gpx for: {', '.join(videos_without_track)}. "
-            "Export from Insta360 Studio with 'Export GPX file' ticked."
+            "Export from Insta360 Studio with 'Export GPX File' ticked."
         )
     return [Recording(video=video, track=video.with_suffix(".gpx")) for video in videos]

@@ -7,7 +7,7 @@ from typing import Any, TypeVar
 
 import yaml
 
-from insta360_mapillary.config import (
+from insta360_to_mapillary.config import (
     TRIM_KEYS,
     ConfigError,
     check_non_negative,
@@ -15,14 +15,20 @@ from insta360_mapillary.config import (
     check_text,
     load_config,
 )
-from insta360_mapillary.recordings import MissingTrackError, find_recordings
-from insta360_mapillary.upload import FrameOptions, Trim, upload_recording
+from insta360_to_mapillary.recordings import MissingTrackError, find_recordings
+from insta360_to_mapillary.upload import (
+    DEFAULT_CAMERA_MAKE,
+    FrameOptions,
+    Trim,
+    upload_recording,
+)
 
 DEFAULTS: dict[str, Any] = {
     "sample_interval": 2.0,
     "skip_start": 0.0,
     "skip_end": 0.0,
     "dry_run": False,
+    "camera_make": DEFAULT_CAMERA_MAKE,
 }
 
 
@@ -33,8 +39,8 @@ class RunOptions:
     skip_start: float
     skip_end: float
     dry_run: bool
+    camera_make: str
     min_spacing: float | None = None
-    camera_make: str | None = None
     camera_model: str | None = None
     user_name: str | None = None
     # Per-video skip_start and skip_end from the config file, by video name without extension
@@ -71,7 +77,7 @@ def argument_type(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="insta360-mapillary",
+        prog="insta360-to-mapillary",
         description="Upload every MP4 + GPX pair exported from Insta360 Studio to Mapillary.",
     )
     parser.add_argument(
@@ -105,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--camera-make",
         type=argument_type(str, check_text),
-        help="Camera make recorded on Mapillary (default: Insta360 for Insta360 Studio exports)",
+        help=f"Camera make recorded on Mapillary (default: {DEFAULTS['camera_make']})",
     )
     parser.add_argument(
         "--camera-model",
@@ -119,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Process everything and write the upload to a local folder",
     )
     parser.add_argument(
-        "--version", action="version", version=importlib.metadata.version("insta360-mapillary")
+        "--version", action="version", version=importlib.metadata.version("insta360-to-mapillary")
     )
     return parser
 

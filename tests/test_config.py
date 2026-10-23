@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from insta360_mapillary.config import ConfigError, load_config
+from insta360_to_mapillary.config import ConfigError, load_config
 
 
 def load(tmp_path: Path, text: str) -> dict:

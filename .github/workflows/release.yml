@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/insta360-mapillary
+      url: https://pypi.org/p/insta360-to-mapillary
     permissions:
       id-token: write
     steps:

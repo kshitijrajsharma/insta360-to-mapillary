@@ -3,23 +3,27 @@ import json
 import subprocess
 from pathlib import Path
 
+import exiv2
+import imageio_ffmpeg
 import pytest
+from mapillary_tools.exif_write import ExifEdit
 
-from insta360_mapillary.recordings import Recording
-from insta360_mapillary.upload import (
+from insta360_to_mapillary.recordings import Recording
+from insta360_to_mapillary.upload import (
     FrameOptions,
     ProcessingError,
     Trim,
-    build_panorama_tag_command,
     build_process_command,
     check_processed_frames,
     frames_folder_for,
     prepare_frames,
     remove_frames_outside,
+    tag_panoramas,
     trim_window,
 )
 
 START = datetime.datetime(2026, 10, 17, 5, 57, 48, tzinfo=datetime.UTC)
+FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 
 def write_descriptions(folder: Path, error_types: list[str | None]) -> Path:
@@ -61,7 +65,7 @@ def test_no_placeable_frame_raises(tmp_path: Path) -> None:
 def write_blank_jpg(frame: Path) -> None:
     frame.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=size=64x32", "-frames:v", "1"]
+        [FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=size=64x32", "-frames:v", "1"]
         + [str(frame)],
         check=True,
     )
@@ -70,17 +74,10 @@ def write_blank_jpg(frame: Path) -> None:
 def write_frame_at(frame: Path, captured: datetime.datetime) -> None:
     """Stamps the frame the way mapillary_tools sample_video does."""
     write_blank_jpg(frame)
-    subprocess.run(
-        [
-            "exiftool",
-            "-overwrite_original",
-            f"-DateTimeOriginal={captured:%Y:%m:%d %H:%M:%S}",
-            f"-SubSecTimeOriginal={captured:%f}",
-            "-OffsetTimeOriginal=+00:00",
-            str(frame),
-        ],
-        check=True,
-    )
+    exif_edit = ExifEdit(frame)
+    exif_edit.add_date_time_original(captured)
+    exif_edit.add_gps_datetime(captured)
+    exif_edit.write()
 
 
 def write_frames(folder: Path, offsets_seconds: list[float]) -> None:
@@ -119,38 +116,38 @@ def test_trim_removing_every_frame_raises(tmp_path: Path) -> None:
         )
 
 
-def test_trim_window_counts_from_millisecond_start_given_to_mapillary_tools() -> None:
-    start = START.replace(microsecond=508999)
+def test_frame_without_capture_time_raises(tmp_path: Path) -> None:
+    write_blank_jpg(tmp_path / "frames" / "street.mp4" / "street_v_000001.jpg")
 
-    keep_from, keep_until = trim_window(start, datetime.timedelta(seconds=10), Trim(4, 3))
+    with pytest.raises(ProcessingError, match="no capture time"):
+        remove_frames_outside(tmp_path / "frames", START, START)
 
-    assert keep_from == START.replace(second=52, microsecond=508000)
-    assert keep_until == START.replace(second=55, microsecond=508000)
+
+def test_trim_window_leaves_out_start_and_end_seconds() -> None:
+    keep_from, keep_until = trim_window(START, datetime.timedelta(seconds=10), Trim(4, 3))
+
+    assert keep_from == START.replace(second=52)
+    assert keep_until == START.replace(second=55)
 
 
 def test_panorama_tags_mark_frame_as_full_equirectangular(tmp_path: Path) -> None:
-    frame = tmp_path / "frames" / "street.mp4" / "street_v_000001.jpg"
+    frame = tmp_path / "frames_ü" / "street.mp4" / "street_v_000001.jpg"
     write_blank_jpg(frame)
 
-    subprocess.run(build_panorama_tag_command(tmp_path / "frames"), check=True)
+    tag_panoramas(tmp_path / "frames_ü")
 
-    output = subprocess.run(
-        ["exiftool", "-json", "-XMP-GPano:all", str(frame)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    tags = json.loads(output)[0]
-    del tags["SourceFile"]
+    image = exiv2.ImageFactory.open(str(frame))
+    image.readMetadata()
+    tags = {datum.key(): datum.toString() for datum in image.xmpData()}
     assert tags == {
-        "ProjectionType": "equirectangular",
-        "UsePanoramaViewer": True,
-        "FullPanoWidthPixels": 64,
-        "FullPanoHeightPixels": 32,
-        "CroppedAreaImageWidthPixels": 64,
-        "CroppedAreaImageHeightPixels": 32,
-        "CroppedAreaLeftPixels": 0,
-        "CroppedAreaTopPixels": 0,
+        "Xmp.GPano.ProjectionType": "equirectangular",
+        "Xmp.GPano.UsePanoramaViewer": "True",
+        "Xmp.GPano.FullPanoWidthPixels": "64",
+        "Xmp.GPano.FullPanoHeightPixels": "32",
+        "Xmp.GPano.CroppedAreaImageWidthPixels": "64",
+        "Xmp.GPano.CroppedAreaImageHeightPixels": "32",
+        "Xmp.GPano.CroppedAreaLeftPixels": "0",
+        "Xmp.GPano.CroppedAreaTopPixels": "0",
     }
 
 
@@ -220,20 +217,12 @@ def test_min_spacing_drops_frames_near_previous_kept_frame_in_any_direction(
     assert errors == expected_errors
 
 
-@pytest.mark.parametrize(("camera_make", "expected_make"), [(None, "Insta360"), ("GoPro", "GoPro")])
-def test_prepare_frames_samples_trims_tags_and_geotags_a_video(
-    tmp_path: Path, camera_make: str | None, expected_make: str
-) -> None:
+def test_prepare_frames_samples_trims_tags_and_geotags_a_video(tmp_path: Path) -> None:
     recording = Recording(video=tmp_path / "street.mp4", track=tmp_path / "street.gpx")
     write_north_track(recording)
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=size=64x32:duration=10:rate=5"]
+        [FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=size=64x32:duration=10:rate=5"]
         + ["-metadata", "creation_time=2026-10-17T05:57:48Z", str(recording.video)],
-        check=True,
-    )
-    subprocess.run(
-        ["exiftool", "-overwrite_original", "-XMP-GSpherical:StitchingSoftware=Insta360"]
-        + [str(recording.video)],
         check=True,
     )
 
@@ -243,7 +232,7 @@ def test_prepare_frames_samples_trims_tags_and_geotags_a_video(
         FrameOptions(
             sample_interval_seconds=1,
             trim=Trim(3, 2),
-            camera_make=camera_make,
+            camera_make="GoPro",
             camera_model="X6",
         ),
     )
@@ -254,14 +243,14 @@ def test_prepare_frames_samples_trims_tags_and_geotags_a_video(
     assert capture_times[-1] == "2026_10_17_05_57_56_000"
     assert ready_count == len(descriptions)
     assert {(entry["MAPDeviceMake"], entry["MAPDeviceModel"]) for entry in descriptions} == {
-        (expected_make, "X6")
+        ("GoPro", "X6")
     }
 
 
 def test_trim_longer_than_video_raises_before_sampling(tmp_path: Path) -> None:
     recording = Recording(video=tmp_path / "street.mp4", track=tmp_path / "street.gpx")
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=size=64x32:duration=4"]
+        [FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=size=64x32:duration=4"]
         + ["-metadata", "creation_time=2026-10-17T05:57:48Z", str(recording.video)],
         check=True,
     )

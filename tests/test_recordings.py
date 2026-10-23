@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from insta360_mapillary.recordings import MissingTrackError, Recording, find_recordings
+from insta360_to_mapillary.recordings import MissingTrackError, Recording, find_recordings
 
 
 def test_pairs_each_video_with_same_named_gpx(tmp_path: Path) -> None:

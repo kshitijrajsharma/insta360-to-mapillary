@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from insta360_mapillary.cli import main, resolve_options
-from insta360_mapillary.upload import FrameOptions, Trim
+from insta360_to_mapillary.cli import main, resolve_options
+from insta360_to_mapillary.upload import FrameOptions, Trim
 
 
 def write_config(tmp_path: Path, text: str) -> Path:

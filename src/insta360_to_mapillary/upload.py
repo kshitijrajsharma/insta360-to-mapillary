@@ -1,19 +1,21 @@
 import datetime
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import exiv2
+import imageio_ffmpeg
 from mapillary_tools.constants import IMAGE_DESCRIPTION_FILENAME
+from mapillary_tools.exif_read import ExifRead
 
-from insta360_mapillary.camera import read_camera_make
-from insta360_mapillary.recordings import Recording
-from insta360_mapillary.video_timing import (
+from insta360_to_mapillary.recordings import Recording
+from insta360_to_mapillary.video_timing import (
     format_for_mapillary_tools,
     read_recording_duration,
     read_recording_start,
-    truncate_to_milliseconds,
 )
 
 MAPILLARY_TOOLS = [sys.executable, "-m", "mapillary_tools.commands"]
@@ -21,6 +23,8 @@ MAPILLARY_TOOLS = [sys.executable, "-m", "mapillary_tools.commands"]
 EXPECTED_FRAME_ERRORS = {"MapillaryOutsideGPXTrackError", "MapillaryDuplicationError"}
 # Bearings differ by at most 180 degrees, so this makes direction irrelevant to duplicates
 ANY_DIRECTION_DEGREES = 180
+# Insta360 Studio exports keep no camera make in the MP4 metadata that mapillary_tools reads
+DEFAULT_CAMERA_MAKE = "Insta360"
 
 
 class ProcessingError(Exception):
@@ -38,7 +42,7 @@ class FrameOptions:
     sample_interval_seconds: float = 2.0
     trim: Trim = Trim()
     min_spacing_meters: float | None = None
-    camera_make: str | None = None
+    camera_make: str = DEFAULT_CAMERA_MAKE
     camera_model: str | None = None
 
 
@@ -68,63 +72,46 @@ def build_sample_command(
 def trim_window(
     recording_start: datetime.datetime, duration: datetime.timedelta, trim: Trim
 ) -> tuple[datetime.datetime, datetime.datetime]:
-    sampled_start = truncate_to_milliseconds(recording_start)
-    keep_from = sampled_start + datetime.timedelta(seconds=trim.start_seconds)
-    keep_until = sampled_start + duration - datetime.timedelta(seconds=trim.end_seconds)
+    keep_from = recording_start + datetime.timedelta(seconds=trim.start_seconds)
+    keep_until = recording_start + duration - datetime.timedelta(seconds=trim.end_seconds)
     return keep_from, keep_until
 
 
 def remove_frames_outside(
     frames_folder: Path, keep_from: datetime.datetime, keep_until: datetime.datetime
 ) -> int:
-    output = subprocess.run(
-        [
-            "exiftool",
-            "-json",
-            "-recurse",
-            "-ext",
-            "jpg",
-            "-SubSecDateTimeOriginal",
-            str(frames_folder),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    frames = json.loads(output)
+    frames = sorted(frames_folder.rglob("*.jpg"))
     if not frames:
         raise ProcessingError(f"No frames sampled in {frames_folder}")
     removed_count = 0
     for frame in frames:
-        captured = datetime.datetime.strptime(
-            frame["SubSecDateTimeOriginal"], "%Y:%m:%d %H:%M:%S.%f%z"
-        )
+        captured = ExifRead(frame).extract_capture_time()
+        if captured is None:
+            raise ProcessingError(f"{frame.name} has no capture time")
         if not keep_from <= captured <= keep_until:
-            Path(frame["SourceFile"]).unlink()
+            frame.unlink()
             removed_count += 1
     if removed_count == len(frames):
         raise ProcessingError(f"Trimming removed every frame in {frames_folder}")
     return removed_count
 
 
-def build_panorama_tag_command(frames_folder: Path) -> list[str]:
+def tag_panoramas(frames_folder: Path) -> None:
     """Sampled frames lose the video's 360 metadata, so write Google's GPano tags back."""
-    return [
-        "exiftool",
-        "-overwrite_original",
-        "-recurse",
-        "-ext",
-        "jpg",
-        "-XMP-GPano:ProjectionType=equirectangular",
-        "-XMP-GPano:UsePanoramaViewer=True",
-        "-XMP-GPano:FullPanoWidthPixels<ImageWidth",
-        "-XMP-GPano:FullPanoHeightPixels<ImageHeight",
-        "-XMP-GPano:CroppedAreaImageWidthPixels<ImageWidth",
-        "-XMP-GPano:CroppedAreaImageHeightPixels<ImageHeight",
-        "-XMP-GPano:CroppedAreaLeftPixels=0",
-        "-XMP-GPano:CroppedAreaTopPixels=0",
-        str(frames_folder),
-    ]
+    for frame in frames_folder.rglob("*.jpg"):
+        image = exiv2.ImageFactory.open(str(frame))
+        image.readMetadata()
+        width, height = str(image.pixelWidth()), str(image.pixelHeight())
+        xmp = image.xmpData()
+        xmp["Xmp.GPano.ProjectionType"] = "equirectangular"
+        xmp["Xmp.GPano.UsePanoramaViewer"] = "True"
+        xmp["Xmp.GPano.FullPanoWidthPixels"] = width
+        xmp["Xmp.GPano.FullPanoHeightPixels"] = height
+        xmp["Xmp.GPano.CroppedAreaImageWidthPixels"] = width
+        xmp["Xmp.GPano.CroppedAreaImageHeightPixels"] = height
+        xmp["Xmp.GPano.CroppedAreaLeftPixels"] = "0"
+        xmp["Xmp.GPano.CroppedAreaTopPixels"] = "0"
+        image.writeMetadata()
 
 
 def build_process_command(
@@ -208,6 +195,7 @@ def prepare_frames(recording: Recording, frames_folder: Path, options: FrameOpti
             options.sample_interval_seconds,
         ),
         check=True,
+        env=os.environ | {"MAPILLARY_TOOLS_FFMPEG_PATH": imageio_ffmpeg.get_ffmpeg_exe()},
     )
     if trimming:
         removed_count = remove_frames_outside(frames_folder, keep_from, keep_until)
@@ -216,13 +204,12 @@ def prepare_frames(recording: Recording, frames_folder: Path, options: FrameOpti
             f"{keep_from.astimezone(datetime.UTC):%H:%M:%S} to "
             f"{keep_until.astimezone(datetime.UTC):%H:%M:%S} UTC"
         )
-    subprocess.run(build_panorama_tag_command(frames_folder), check=True)
-    camera_make = options.camera_make or read_camera_make(recording.video)
+    tag_panoramas(frames_folder)
     subprocess.run(
         build_process_command(
             frames_folder,
             recording.track,
-            camera_make,
+            options.camera_make,
             options.camera_model,
             options.min_spacing_meters,
         ),
