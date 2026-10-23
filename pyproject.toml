@@ -1,0 +1,91 @@
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "insta360-mapillary"
+version = "0.1.0"
+description = "Upload Insta360 360 video exports with their GPX tracks to Mapillary."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Kshitij Raj Sharma", email = "skshitizraj@gmail.com" }]
+keywords = ["insta360", "mapillary", "360", "gpx", "street-level imagery"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Typing :: Typed",
+]
+dependencies = [
+    "mapillary-tools>=0.14.7,<0.15",
+    "pyyaml>=6.0.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/kshitijrajsharma/insta360-mapillary"
+Repository = "https://github.com/kshitijrajsharma/insta360-mapillary"
+Issues = "https://github.com/kshitijrajsharma/insta360-mapillary/issues"
+
+[project.scripts]
+insta360-mapillary = "insta360_mapillary.cli:main"
+
+[tool.uv.build-backend]
+source-include = ["tests/**"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+    "--cov=insta360_mapillary",
+    "--cov-report=term-missing",
+]
+testpaths = ["tests"]
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["src/insta360_mapillary"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = ["pyproject.toml:version"]
+tag_format = "v$version"
+major_version_zero = true
+
+[dependency-groups]
+dev = [
+    "commitizen>=4.19.2",
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.1",
+    "ty>=0.0.89",
+    "types-pyyaml>=6.0.12.20260906",
+]
