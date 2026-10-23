@@ -1,4 +1,4 @@
-# insta360-mapillary
+# insta360-to-mapillary
 
 Uploads 360 video from an Insta360 camera to [Mapillary](https://www.mapillary.com), using the GPX track that Insta360 Studio exports next to each video.
 
